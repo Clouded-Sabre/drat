@@ -6,3 +6,11 @@
 
 /docs/_build/
 /docs/_ext/__pycache__/
+output.txt
+venv/
+__pycache__/
+*.egg-info/
+*.egg
+fs_manifest.json
+recovery_map.json
+skipped_files.log

@@ -550,6 +550,7 @@ int cmd_modify(int argc, char** argv) {
             char* toc_start = (char*)node->btn_data + node->btn_table_space.off;
             char* key_start = toc_start + node->btn_table_space.len;
             char* val_end   = (char*)node + globals.block_size;
+            (void)val_end; //rodger: dirty fix for the compilation issue. However, we don't need to use this command
             if (node->btn_flags & BTNODE_ROOT) {
                 val_end -= sizeof(btree_info_t);
             }
