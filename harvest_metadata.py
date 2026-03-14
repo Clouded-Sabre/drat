@@ -11,22 +11,21 @@ XID_START = 0x2d2
 XID_LIMIT = 0x2c0 
 RECOVERY_MAP = "recovery_map.json"
 
-def keep_sudo_alive():
-    """Background thread to keep sudo credentials fresh."""
-    def refresh():
-        while True:
-            # -v (validate) updates the timestamp without running a command
-            subprocess.run(["sudo", "-v"], check=True)
-            time.sleep(120) # Refresh every 2 minutes
-    
-    timer_thread = threading.Thread(target=refresh, daemon=True)
-    timer_thread.start()
-
 def load_manifest():
+    if not os.path.exists(MANIFEST_FILE):
+        print(f"[!] ERROR: {MANIFEST_FILE} not found. Run build_tree.py first.")
+        return
+    
     with open(MANIFEST_FILE, "r") as f:
         return json.load(f)
 
 def harvest_metadata(xid, pending_files):
+    # Verify we are running as root (UID 0)
+    if os.getuid() != 0:
+        print("[!] ERROR: This script must be run with sudo.")
+        print("Usage: sudo python harvest_metadata.py")
+        sys.exit(1)
+    
     found_this_round = {}
     total_to_check = len(pending_files)
     
@@ -44,7 +43,7 @@ def harvest_metadata(xid, pending_files):
         sys.stdout.write(f"\r    [{i}/{total_to_check}] ({percent:3.1f}%) Searching: {display_path}")
         sys.stdout.flush()
         
-        cmd = ["sudo", "./drat", "--container", "/dev/rdisk5", "--volume", "1", 
+        cmd = ["./drat", "--container", "/dev/rdisk5", "--volume", "1", 
                "--max-xid", hex(xid), "list", "--fsoid", fsoid]
         
         process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -61,9 +60,11 @@ def harvest_metadata(xid, pending_files):
     return found_this_round
 
 def main():
-    # Pre-auth sudo so it doesn't prompt inside the loop
-    subprocess.run(["sudo", "-v"], check=True)
-    keep_sudo_alive()
+    # Primary check for sudo/root privileges
+    if os.getuid() != 0:
+        print("[!] This script requires root privileges. Please run with sudo:")
+        print(f"    sudo python3 {sys.argv[0]}")
+        sys.exit(1)
     
     all_files = load_manifest()
     pending = [f for f in all_files if f['type'] == 'RegFile']

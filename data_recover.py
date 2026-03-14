@@ -3,7 +3,7 @@ import subprocess
 import os
 import time
 import getpass
-import threading
+import sys
 
 # --- CONFIG ---
 RECOVERY_MAP = "recovery_map.json"
@@ -12,22 +12,23 @@ DRAT_PATH = "./drat"
 CONTAINER = "/dev/rdisk5"
 VOLUME = "1"
 
-def keep_sudo_alive():
-    """Background thread to keep sudo credentials fresh."""
-    def refresh():
-        while True:
-            # -v (validate) updates the timestamp without running a command
-            subprocess.run(["sudo", "-v"], check=True)
-            time.sleep(120) # Refresh every 2 minutes
-    
-    timer_thread = threading.Thread(target=refresh, daemon=True)
-    timer_thread.start()
-
 def recover_data():
+    # Verify we are running as root (UID 0)
+    if os.getuid() != 0:
+        print("[!] ERROR: This script must be run with sudo.")
+        print("Usage: sudo python3 drat_final_recovery.py")
+        sys.exit(1)
+
+    if not os.path.exists(RECOVERY_MAP):
+        print(f"[!] ERROR: {RECOVERY_MAP} not found. Run harvest_metadata.py first.")
+        return
+    
     with open(RECOVERY_MAP, "r") as f:
         recovery_data = json.load(f)
 
-    current_user = getpass.getuser()
+    # We need the actual username to fix permissions later
+    # When running with sudo, SUDO_USER gives the original user name
+    current_user = os.environ.get("SUDO_USER", getpass.getuser())
     total_files = len(recovery_data)
     
     stats = {
@@ -60,13 +61,14 @@ def recover_data():
             if os.path.exists(f_to_rem):
                 os.remove(f_to_rem)
 
-        # 2. Updated Print Statement with Overall Progress
-        # Using :>3 for alignment so the text doesn't jitter
-        print(f"[*] [{index}/{total_files}] ({percent:3.0f}%) Recovering: {path[-50:]:50}...", end="\r")
+        # 2. Progress Display
+        display_path = (path[-37:] + '..') if len(path) > 40 else path.ljust(40)
+        sys.stdout.write(f"\r[*] [{index}/{total_files}] ({percent:3.0f}%) Recovering: {display_path}")
+        sys.stdout.flush()
 
         # 3. Execution
         cmd = [
-            "sudo", DRAT_PATH, "--container", CONTAINER, "--volume", VOLUME, 
+            DRAT_PATH, "--container", CONTAINER, "--volume", VOLUME, 
             "--max-xid", xid, "recover", "--fsoid", fsoid, "--output", local_file_path
         ]
         
@@ -88,10 +90,31 @@ def recover_data():
             print(" " * 100, end="\r")
             print(f"[!] FAILED: {path}")
             stats["files_failed"] += 1
+    
+    # --- FINAL PERMISSIONS FIX ---
+    print("\n" + "="*45)
+    print(f"[*] Recovery complete. Finalizing {current_user}'s permissions...")
+    subprocess.run(["chown", "-R", current_user, OUTPUT_DIR], check=True)
+    subprocess.run(["chmod", "-R", "755", OUTPUT_DIR], check=True)
+
+    # --- SUMMARY ---
+    total_gb = stats["total_bytes"] / (1024**3)
+    print("\n" + " RECOVERY REPORT ".center(45, "="))
+    print(f" Directories:      {stats['dirs_created']}")
+    print(f" Files Succeeded:  {stats['files_success']}")
+    print(f" Files Failed:     {stats['files_failed']}")
+    print(f" Total Recovered:  {total_gb:.2f} GB")
+    print("="*45)
+    print(f"[+] Files are ready in: {OUTPUT_DIR}")
 
 if __name__ == "__main__":
-    subprocess.run(["sudo", "-v"], check=True)
-    keep_sudo_alive()
+    # Primary check for sudo/root privileges
+    if os.getuid() != 0:
+        print("[!] This script requires root privileges. Please run with sudo:")
+        print(f"    sudo python3 {sys.argv[0]}")
+        sys.exit(1)
+    
     if not os.path.exists(OUTPUT_DIR):
         os.makedirs(OUTPUT_DIR)
+    
     recover_data()

@@ -14,3 +14,7 @@ __pycache__/
 fs_manifest.json
 recovery_map.json
 skipped_files.log
+dest_index.pkl
+remove_archived.py
+migration_verify.log
+clean_empty_dirs.sh
