@@ -2,8 +2,6 @@ import json
 import subprocess
 import os
 import sys
-import time
-import threading
 
 # CONFIG
 MANIFEST_FILE = "fs_manifest.json"
